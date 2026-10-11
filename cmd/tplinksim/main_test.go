@@ -31,7 +31,7 @@ func TestRunner(t *testing.T) {
 		t.Fatal("not ready")
 	}
 	found, err := tplink.TapoDiscover(ctx, r.responder.Addr(), 600*time.Millisecond)
-	if err != nil || len(found) != 3 {
+	if err != nil || len(found) != 5 {
 		t.Fatalf("discovery %+v %v", found, err)
 	}
 	a := &tplink.AESClient{Base: "http://" + r.aes.Addr(), Logins: tplink.AESLogins(sim.DemoUser, sim.DemoPassword, 2), HTTP: &http.Client{Timeout: 5 * time.Second}}

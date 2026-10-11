@@ -1,10 +1,17 @@
 // Package sim simulates TP-Link devices for tests and demos: Kasa devices
 // on the legacy protocol (TCP and UDP on one loopback port, get_sysinfo,
 // relay and child relay state, dimmer brightness, bulb light state, the
-// energy meter), Kasa and Tapo devices on KLAP v1 and v2 (the two-step
-// handshake, signed AES-128-CBC requests), Tapo devices on
-// securePassthrough, Tapo hubs and strips with children, and a responder
-// to the UDP 20002 discovery probe. Built from the protocol facts in the
+// energy meter with day and month statistics, runtime statistics,
+// schedule, countdown and away-mode rules, dimmer transitions and fades,
+// light strip effects, LED, name, reboot, cloud and Wi-Fi), Kasa and Tapo
+// devices on KLAP v1 and v2 over HTTP or HTTPS (the two-step handshake,
+// signed AES-128-CBC requests), Tapo devices on securePassthrough, Tapo
+// hubs and strips with children, Tapo settings, rules, light effects,
+// energy history, firmware update and set-up (TapoState), Tapo cameras and
+// the H200 hub on their HTTPS transport (StartCamera), Kasa cameras
+// (StartKasaCamera), the plain HTTPS transport of robot vacuums
+// (StartTapoSSL), and a responder to the UDP 20002 discovery probe, with
+// the answer's encrypted part on demand. Built from the protocol facts in the
 // tplink module, which come from public descriptions; not from any
 // TP-Link or open-source client code.
 package sim
@@ -28,6 +35,8 @@ import (
 
 // Kasa is a simulated Kasa device.
 type Kasa struct {
+	KasaState // rules, dimmer settings, Wi-Fi and the rest (kasa_modules.go)
+
 	mu      sync.Mutex
 	Sysinfo map[string]any
 	// Emeter is the get_realtime answer (nil: no energy meter).
@@ -39,6 +48,7 @@ type Kasa struct {
 	tcp         net.Listener
 	udp         *net.UDPConn
 	wg          sync.WaitGroup
+	web         *httptest.Server // the HTTPS transport (StartKasaCamera)
 }
 
 // StartKasa starts a Kasa device on 127.0.0.1 (TCP and UDP on one port).
@@ -71,10 +81,23 @@ func StartKasa(sysinfo, emeter map[string]any) (*Kasa, error) {
 }
 
 // Addr is the device's address (127.0.0.1:port).
-func (k *Kasa) Addr() string { return k.tcp.Addr().String() }
+func (k *Kasa) Addr() string {
+	if k.web != nil {
+		return k.web.Listener.Addr().String()
+	}
+	return k.tcp.Addr().String()
+}
 
 // Close stops the device.
-func (k *Kasa) Close() { k.tcp.Close(); k.udp.Close(); k.wg.Wait() }
+func (k *Kasa) Close() {
+	if k.web != nil {
+		k.web.Close()
+		return
+	}
+	k.tcp.Close()
+	k.udp.Close()
+	k.wg.Wait()
+}
 
 // Requests returns the requests received.
 func (k *Kasa) Requests() []map[string]any {
@@ -158,7 +181,11 @@ func (k *Kasa) handle(req map[string]any) map[string]any {
 		res := map[string]any{}
 		for meth, arg := range mm {
 			a, _ := arg.(map[string]any)
-			switch mod + "." + meth {
+			if r, done := k.module(canonical(mod), meth, a, childIDs); done {
+				res[meth] = r
+				continue
+			}
+			switch canonical(mod) + "." + meth {
 			case "system.get_sysinfo":
 				cp := map[string]any{"err_code": 0.0}
 				for kk, vv := range k.Sysinfo {
@@ -239,6 +266,8 @@ func (k *Kasa) handle(req map[string]any) map[string]any {
 // methods), or with StartKasaKLAP a Kasa device on newer firmware (KLAP
 // v1 or v2 carrying the legacy Kasa JSON).
 type Tapo struct {
+	TapoState // settings, rules, firmware, Wi-Fi (smart_modules.go)
+
 	HTTP *httptest.Server
 	// BadAnswerSignature signs answers with a wrong signature (a firmware
 	// that does not sign them the way requests are signed).
@@ -263,6 +292,13 @@ type Tapo struct {
 	sessions    map[string]*session
 	methods     []string
 	next        int
+
+	https       bool                   // served over TLS
+	cam         map[string]*sslSession // HTTPS camera sessions by token (StartCamera)
+	camUser     string
+	camPassword string
+	camNonces   map[string]string // first login step's nonces by cnonce
+	tagFailures int
 }
 
 type session struct {
@@ -442,22 +478,36 @@ const (
 	MACBulb  = "5c628b000003"
 	MACTapo  = "3c52a1000004"
 	MACTapoB = "3c52a1000005"
+
+	MACDimmer     = "5c628b000006"
+	MACLightStrip = "5c628b000007"
+	MACHub        = "3c52a1000008"
+	MACCamera     = "003192000009"
+)
+
+// Demo camera account (the camera's local user).
+const (
+	DemoCameraUser     = "admin"
+	DemoCameraPassword = "demo-camera-password"
 )
 
 // Demo is a set of simulated devices.
 type Demo struct {
 	Plug, Strip, Bulb  *Kasa
 	TapoPlug, TapoBulb *Tapo
+	// Added in v0.2.0.
+	Dimmer, LightStrip *Kasa
+	TapoHub, Camera    *Tapo
 }
 
 // Close stops every device.
 func (d *Demo) Close() {
-	for _, k := range []*Kasa{d.Plug, d.Strip, d.Bulb} {
+	for _, k := range []*Kasa{d.Plug, d.Strip, d.Bulb, d.Dimmer, d.LightStrip} {
 		if k != nil {
 			k.Close()
 		}
 	}
-	for _, t := range []*Tapo{d.TapoPlug, d.TapoBulb} {
+	for _, t := range []*Tapo{d.TapoPlug, d.TapoBulb, d.TapoHub, d.Camera} {
 		if t != nil {
 			t.Close()
 		}
@@ -468,7 +518,11 @@ func b64(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) 
 
 // NewDemo starts a Kasa HS110 plug with an energy meter, a Kasa HS300-like
 // strip with three outlets, a Kasa KL130 colour bulb, a Tapo P110 plug
-// with energy use and a Tapo L530 colour bulb.
+// with energy use and a Tapo L530 colour bulb; since v0.2.0 also a Kasa
+// HS220 dimmer, a Kasa KL430 light strip, a Tapo H100 hub with a
+// temperature and humidity sensor, a button and a contact sensor, and a
+// Tapo C210 camera on the HTTPS transport (DemoCameraUser,
+// DemoCameraPassword).
 func NewDemo() (*Demo, error) {
 	d := &Demo{}
 	var err error
@@ -493,5 +547,32 @@ func NewDemo() (*Demo, error) {
 		"mac": "3C-52-A1-00-00-04", "nickname": b64("Microwave"), "device_on": false}, map[string]any{"current_power": 0.0, "today_energy": 120.0, "month_energy": 5400.0})
 	d.TapoBulb = StartTapo(DemoUser, DemoPassword, map[string]any{"device_id": "80223G", "model": "L530", "type": "SMART.TAPOBULB", "fw_ver": "1.1.9 Build 230614",
 		"mac": "3C-52-A1-00-00-05", "nickname": b64("Balcony bulb"), "device_on": true, "brightness": 60.0, "hue": 30.0, "saturation": 90.0, "color_temp": 0.0}, nil)
+
+	if d.Dimmer, err = StartKasa(map[string]any{"alias": "Hall dimmer", "model": "HS220(US)", "sw_ver": "1.5.7", "mac": "5C:62:8B:00:00:06",
+		"mic_type": "IOT.SMARTPLUGSWITCH", "relay_state": 1.0, "brightness": 40.0, "deviceId": "8006A6"}, nil); err != nil {
+		d.Close()
+		return nil, err
+	}
+	if d.LightStrip, err = StartKasa(map[string]any{"alias": "Shelf strip", "model": "KL430(US)", "sw_ver": "1.0.11", "mic_mac": "5C628B000007",
+		"mic_type": "IOT.SMARTBULB", "is_color": 1.0, "is_dimmable": 1.0, "is_variable_color_temp": 1.0, "length": 16.0,
+		"lighting_effect_state": map[string]any{"enable": 0.0, "name": "", "brightness": 50.0, "custom": 0.0, "id": ""},
+		"light_state":           map[string]any{"on_off": 1.0, "brightness": 50.0, "hue": 200.0, "saturation": 80.0, "color_temp": 0.0}},
+		map[string]any{"power_mw": 2700.0, "total_wh": 1193.0}); err != nil {
+		d.Close()
+		return nil, err
+	}
+	d.TapoHub = StartTapo(DemoUser, DemoPassword, map[string]any{"device_id": "80223H", "model": "H100", "type": "SMART.TAPOHUB", "fw_ver": "1.5.10 Build 240207",
+		"mac": "3C-52-A1-00-00-08", "nickname": b64("Hall hub")}, nil)
+	d.TapoHub.Children = []map[string]any{
+		{"device_id": "80223H01", "model": "T315", "category": "subg.trigger.temp-hmdt-sensor", "type": "SMART.TAPOSENSOR", "nickname": b64("Nursery"),
+			"current_temp": 22.4, "current_humidity": 51.0, "temp_unit": "celsius", "battery_percentage": 90.0, "at_low_battery": false, "status": "online"},
+		{"device_id": "80223H02", "model": "S200B", "category": "subg.trigger.button", "type": "SMART.TAPOSENSOR", "nickname": b64("Door button"),
+			"at_low_battery": false, "status": "online"},
+		{"device_id": "80223H03", "model": "T110", "category": "subg.trigger.contact-sensor", "type": "SMART.TAPOSENSOR", "nickname": b64("Back door"),
+			"open": false, "at_low_battery": false, "status": "online"},
+	}
+	d.Camera = StartCamera(DemoCameraUser, DemoCameraPassword, map[string]any{"device_type": "SMART.IPCAMERA", "device_model": "C210", "device_alias": "Porch",
+		"sw_version": "1.3.11 Build 231117", "hw_version": "2.0", "mac": "00-31-92-00-00-09", "dev_id": "80223C", "device_info": "C210 2.0 IPC"})
+	d.Camera.CamSections = map[string]map[string]any{"lens_mask": {"lens_mask_info": map[string]any{"enabled": "off"}}}
 	return d, nil
 }

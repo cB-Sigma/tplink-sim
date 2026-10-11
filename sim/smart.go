@@ -60,6 +60,9 @@ func (t *Tapo) smart(method string, params map[string]any) map[string]any {
 		if t.Children != nil {
 			list = append(list, map[string]any{"id": "control_child", "ver_code": 2}, map[string]any{"id": "child_device", "ver_code": 2})
 		}
+		for _, id := range sortedKeys(t.Components) {
+			list = append(list, map[string]any{"id": id, "ver_code": t.Components[id]})
+		}
 		out["result"] = map[string]any{"component_list": list}
 	case "get_device_time":
 		out["result"] = map[string]any{"time_diff": 0, "timestamp": time.Now().Unix(), "region": "Europe/London"}
@@ -109,39 +112,86 @@ func (t *Tapo) smart(method string, params map[string]any) map[string]any {
 		}
 		m, _ := rd["method"].(string)
 		p, _ := rd["params"].(map[string]any)
-		t.methods = append(t.methods, "child:"+m)
-		inner := map[string]any{"error_code": 0}
-		switch m {
-		case "get_device_info":
-			inner["result"] = ch
-		case "set_device_info":
-			for k, v := range p {
-				ch[k] = v
-			}
-			inner["result"] = map[string]any{}
-		case "get_trigger_logs":
-			logs := t.TriggerLogs[id]
-			if cat, _ := ch["category"].(string); logs == nil && !strings.Contains(cat, "button") {
-				inner = map[string]any{"error_code": -1002}
-				break
-			}
-			l := make([]any, len(logs))
-			for i, x := range logs {
-				l[i] = x
-			}
-			startID := 0
-			if len(logs) > 0 {
-				startID = int(num(logs[0]["id"]))
-			}
-			inner["result"] = map[string]any{"logs": l, "start_id": startID, "sum": len(logs)}
-		default:
-			inner = map[string]any{"error_code": -1002}
-		}
-		out["result"] = map[string]any{"responseData": inner}
+		out["result"] = map[string]any{"responseData": t.childRequest(ch, id, m, p)}
 	default:
+		if r, ok := t.smartMore(method, params); ok {
+			return r
+		}
 		return map[string]any{"error_code": -1002}
 	}
 	return out
+}
+
+// childRequest answers one request to a child (a multipleRequest is
+// answered request by request). The caller holds t.mu.
+func (t *Tapo) childRequest(ch map[string]any, id, m string, p map[string]any) map[string]any {
+	t.methods = append(t.methods, "child:"+m)
+	inner := map[string]any{"error_code": 0}
+	switch m {
+	case "multipleRequest":
+		reqs, _ := p["requests"].([]any)
+		responses := make([]any, 0, len(reqs))
+		for _, r := range reqs {
+			rm, _ := r.(map[string]any)
+			mm, _ := rm["method"].(string)
+			pp, _ := rm["params"].(map[string]any)
+			res := t.childRequest(ch, id, mm, pp)
+			one := map[string]any{"method": mm, "error_code": res["error_code"]}
+			if v, ok := res["result"]; ok {
+				one["result"] = v
+			}
+			responses = append(responses, one)
+		}
+		inner["result"] = map[string]any{"responses": responses}
+		return inner
+	case "get_device_time":
+		inner["result"] = map[string]any{"time_diff": 0, "timestamp": time.Now().Unix(), "region": "Europe/London"}
+		return inner
+	case "component_nego":
+		inner["result"] = map[string]any{"component_list": componentList(t.childComponents(ch))}
+		return inner
+	case "get_connect_cloud_state":
+		inner["result"] = map[string]any{"status": 0}
+		return inner
+	case "get_temp_humidity_records":
+		if _, ok := ch["current_temp"]; !ok {
+			return map[string]any{"error_code": -1002}
+		}
+		temps, hums := []any{}, []any{}
+		for i := 0; i < 24; i++ {
+			temps = append(temps, num(ch["current_temp"])*10)
+			hums = append(hums, num(ch["current_humidity"]))
+		}
+		inner["result"] = map[string]any{"local_time": time.Now().Unix(), "past24h_temp": temps, "past24h_humidity": hums,
+			"past24h_temp_exception": make([]any, 24), "past24h_humidity_exception": make([]any, 24)}
+		return inner
+	}
+	switch m {
+	case "get_device_info":
+		inner["result"] = ch
+	case "set_device_info":
+		for k, v := range p {
+			ch[k] = v
+		}
+		inner["result"] = map[string]any{}
+	case "get_trigger_logs":
+		logs := t.TriggerLogs[id]
+		if cat, _ := ch["category"].(string); logs == nil && !strings.Contains(cat, "button") {
+			return map[string]any{"error_code": -1002}
+		}
+		l := make([]any, len(logs))
+		for i, x := range logs {
+			l[i] = x
+		}
+		startID := 0
+		if len(logs) > 0 {
+			startID = int(num(logs[0]["id"]))
+		}
+		inner["result"] = map[string]any{"logs": l, "start_id": startID, "sum": len(logs)}
+	default:
+		return map[string]any{"error_code": -1002}
+	}
+	return inner
 }
 
 // Press adds a press to a button's trigger log (event singleClick,
@@ -375,21 +425,28 @@ func (r *Responder) serve() {
 		devs := append([]*Tapo(nil), r.devices...)
 		r.mu.Unlock()
 		for _, t := range devs {
-			_, _ = r.conn.WriteToUDP(t.discoveryAnswer(), from)
+			_, _ = r.conn.WriteToUDP(t.discoveryAnswer([]byte(p.Params.RSAKey)), from)
 		}
 	}
 }
 
 // discoveryAnswer is the device's 20002 answer.
-func (t *Tapo) discoveryAnswer() []byte {
+func (t *Tapo) discoveryAnswer(probeKey []byte) []byte {
 	t.mu.Lock()
-	info := t.Info
+	info := copyMap(t.Info) // copied: requests change it while the answer is built
 	sysinfo := map[string]any(nil)
 	if t.iot != nil {
-		sysinfo = t.iot.Sysinfo
+		t.iot.mu.Lock()
+		sysinfo = copyMap(t.iot.Sysinfo)
+		t.iot.mu.Unlock()
 	}
 	enc, lv := "KLAP", t.version
 	if t.aes != nil {
+		enc = "AES"
+	}
+	secret := copyMap(t.DiscoverySecret)
+	https, camera := t.https, t.cam != nil
+	if camera {
 		enc = "AES"
 	}
 	t.mu.Unlock()
@@ -397,7 +454,12 @@ func (t *Tapo) discoveryAnswer() []byte {
 	var p int
 	fmt.Sscan(port, &p)
 	model, typ, mac, id := "", "", "", ""
-	if info != nil {
+	if camera {
+		model, _ = info["device_model"].(string)
+		typ, _ = info["device_type"].(string)
+		mac, _ = info["mac"].(string)
+		id, _ = info["dev_id"].(string)
+	} else if info != nil {
 		model, _ = info["model"].(string)
 		typ, _ = info["type"].(string)
 		mac, _ = info["mac"].(string)
@@ -410,7 +472,16 @@ func (t *Tapo) discoveryAnswer() []byte {
 	}
 	res := map[string]any{"device_id": id, "owner": "0123456789ABCDEF", "device_type": typ, "device_model": model + "(EU)", "ip": "127.0.0.1",
 		"mac": strings.ToUpper(strings.ReplaceAll(mac, ":", "-")), "is_support_iot_cloud": true, "obd_src": "tplink", "factory_default": false,
-		"mgt_encrypt_schm": map[string]any{"is_support_https": false, "encrypt_type": enc, "http_port": p, "lv": lv}}
+		"mgt_encrypt_schm": map[string]any{"is_support_https": https, "encrypt_type": enc, "http_port": p, "lv": lv}}
+	if camera {
+		res["encrypt_type"] = []any{"3"}
+		res["mgt_encrypt_schm"] = map[string]any{"is_support_https": true, "encrypt_type": enc, "http_port": p}
+	}
+	if secret != nil {
+		if ei, err := tplink.SealTapoDiscovery(probeKey, secret); err == nil {
+			res["encrypt_info"] = ei
+		}
+	}
 	body, _ := json.Marshal(map[string]any{"error_code": 0, "result": res})
 	hdr := make([]byte, 16)
 	hdr[0], hdr[1] = 2, 0

@@ -5,25 +5,35 @@ Simulated TP-Link Kasa and Tapo devices on their local protocols, for testing Ka
 [![Go Reference](https://pkg.go.dev/badge/github.com/cB-Sigma/tplink-sim.svg)](https://pkg.go.dev/github.com/cB-Sigma/tplink-sim) [![test](https://github.com/cB-Sigma/tplink-sim/actions/workflows/test.yml/badge.svg)](https://github.com/cB-Sigma/tplink-sim/actions/workflows/test.yml) [![Licence: Apache-2.0](https://img.shields.io/badge/licence-Apache--2.0-blue.svg)](LICENSE) [![Go](https://img.shields.io/badge/go-1.22-00ADD8.svg)](go.mod)
 
 Kasa devices on the legacy protocol (TCP and UDP on one port), Kasa and
-Tapo devices on KLAP v1 and v2, Tapo devices on securePassthrough with
-either login version, hubs and power strips with children and button
-logs, and a responder to the UDP 20002 discovery probe. Enough of each
-device is answered for python-kasa's Device API to connect, read and
-switch it. It is built on [tplink](https://github.com/cB-Sigma/tplink).
-Written for SigmaM2M, a oneM2M platform; it has no dependency on it.
+Tapo devices on KLAP v1 and v2 over HTTP and HTTPS, Tapo devices on
+securePassthrough with either login version, Tapo cameras and the H200
+hub on their HTTPS transport, Kasa cameras, robot vacuums on the plain
+HTTPS transport, hubs and power strips with children, sensors and button
+logs, and a responder to the UDP 20002 discovery probe. Beyond switching,
+the simulated devices keep energy statistics, rules, dimmer and light
+settings, light effects, firmware updates and Wi-Fi set-up. Enough of
+each device is answered for python-kasa's Device API to connect, read,
+switch and change it. It is built on
+[tplink](https://github.com/cB-Sigma/tplink). Written for SigmaM2M, a
+oneM2M platform; it has no dependency on it.
 
 ## What is simulated
 
 | Feature | Status |
 |---|---|
 | Kasa legacy protocol: get_sysinfo, set_relay_state (also per child), dimmer brightness, bulb and light-strip light state, the energy meter (also per strip outlet), the time module; module errors for the rest | yes |
+| Kasa modules beyond switching, under the plug and bulb module names: energy day and month statistics and erasing them, runtime statistics, schedule, countdown and away-mode rules (add, edit, delete, enable; `Rules`), dimmer transitions, fades, ramp rate and parameters (`DimmerSetting`), light state, details and presets, light strip effects, LED, name (also per outlet), reboot (`Reboots`), cloud information and firmware list (`Firmware`), Wi-Fi scan (`Networks`) and join (`Joined`) | yes, since v0.2.0 |
 | KLAP v1 and v2: the two-step handshake, signed AES-128-CBC requests, sessions that end (`ForgetSessions`), answers with a wrong signature on demand (`BadAnswerSignature`) | yes |
+| KLAP over HTTPS (`StartTapoHTTPS`) | yes, since v0.2.0 |
 | Kasa devices on KLAP carrying the legacy JSON (`StartKasaKLAP`) | yes |
 | securePassthrough: RSA handshake, login version 1 or 2, tokens, sessions that end (`ForgetAES`) | yes |
 | Tapo requests: get_device_info, set_device_info, get_energy_usage, get_current_power, get_device_time, component_nego, multipleRequest | yes |
-| Hubs and strips: get_child_device_list paged, control_child, button trigger logs (`Press`) | yes |
-| UDP 20002 responder checking the probe's header, CRC and key | yes; one answer per simulated device, from one port |
-| HTTPS transports, cameras, the cloud, firmware update, schedules | no |
+| Tapo modules beyond switching (`TapoState`): extra components, settings answered and kept (auto-off, LED, transitions, automatic updates, light strip effect, ...), rule lists, presets, light effects, energy readings and hourly, daily and monthly history, device use, firmware offer, download and install in steps (`LatestFirmware`), Wi-Fi scan, set-up with a new account (`QuickSetup`), reboot | yes, since v0.2.0 |
+| Hubs and strips: get_child_device_list paged, control_child (also with multipleRequest inside), children's components, sensor records, button trigger logs (`Press`) | yes; batches, components and records since v0.2.0 |
+| Tapo cameras, doorbells and the H200 hub on the HTTPS transport (`StartCamera`): the nonce login with a SHA-256 or MD5 password hash (`PasswordMD5`) or the plain login (`PlainLogin`), request tags and sequence checked (`TagFailures`), sessions that end, camera requests from `CamSections`, renaming, H200 children | yes, since v0.2.0 |
+| Kasa cameras (`StartKasaCamera`) and robot vacuums on the plain HTTPS transport (`StartTapoSSL`) | yes, since v0.2.0 |
+| UDP 20002 responder checking the probe's header, CRC and key; the answer's encrypted part on demand (`DiscoverySecret`); HTTPS and camera answers | yes; one answer per simulated device, from one port |
+| Camera video, pan and tilt and detection behaviour, robot vacuum cleaning, the cloud | no; see "Not yet" |
 
 ## Install
 
@@ -48,9 +58,12 @@ tplinksim -aes
 | `-aes` | off | also serve a Tapo P100 plug on securePassthrough (older firmware) |
 
 It serves a Kasa HS110 plug with an energy meter, an HS300 strip with
-three outlets and a KL130 colour bulb on the legacy protocol, a Tapo P110
-plug and an L530 bulb on KLAP v2, each on its own port of 127.0.0.1, and
-the 20002 responder; it prints their addresses and the demo account.
+three outlets, a KL130 colour bulb, an HS220 dimmer and a KL430 light
+strip on the legacy protocol, a Tapo P110 plug, an L530 bulb and an H100
+hub with a temperature and humidity sensor, a button and a contact sensor
+on KLAP v2, and a Tapo C210 camera on the HTTPS transport, each on its
+own port of 127.0.0.1, and the 20002 responder; it prints their
+addresses, the demo account and the demo camera user.
 
 ## In Go tests
 
@@ -76,7 +89,7 @@ Reference: https://pkg.go.dev/github.com/cB-Sigma/tplink-sim
 
 | Package | What it does |
 |---|---|
-| `sim` | `StartKasa`, `StartKasaKLAP`, `StartTapo`, `StartTapoAES` (`Tapo`: `Children`, `PageSize`, `Press`, `Child`, `SetChild`, `Methods`), `StartResponder`, `NewDemo`, `DemoUser`, `DemoPassword` |
+| `sim` | `StartKasa`, `StartKasaKLAP`, `StartKasaCamera` (`Kasa`: `KasaState`, `Do`, `Rules`, `Joined`, `Reboots`, `DimmerSetting`), `StartTapo`, `StartTapoAES`, `StartTapoHTTPS`, `StartTapoSSL`, `StartCamera` (`Tapo`: `TapoState`, `Do`, `Children`, `PageSize`, `Press`, `Child`, `SetChild`, `Methods`, `Setting`, `QuickSetup`, `TapoReboots`, `TagFailures`, `ForgetCameraSessions`), `StartResponder`, `NewDemo`, `DemoUser`, `DemoPassword`, `DemoCameraUser`, `DemoCameraPassword`, `DemoDayWh`, `DemoDayMinutes`, `DemoHourWh` |
 | `cmd/tplinksim` | Serves the demo devices and the responder |
 | `interop` (nested module, tests only) | python-kasa's client against the simulators, in a container |
 
@@ -91,7 +104,9 @@ cd interop && SIGMA_TPLINK_INTEROP=1 go test -v ./...   # needs Docker
 
 The tests at the module root drive the tplink clients against the
 simulators: the legacy protocol, KLAP v1 and v2 with every credential
-kind, securePassthrough, children and discovery. Tests carry `// Covers:
+kind, KLAP over HTTPS, securePassthrough, the camera, Kasa camera and
+plain HTTPS transports, children and discovery, and every typed helper
+(devices_test.go, https_test.go). Tests carry `// Covers:
 SIG-...` comments: requirement IDs of the SigmaM2M project's compliance
 report, with no meaning outside it.
 
@@ -113,9 +128,51 @@ report, with no meaning outside it.
   simulators did not answer (multipleRequest, component_nego,
   get_device_time on Tapo; the time module on Kasa); they were added in
   v0.1.0.
+- Added in v0.2.0, same image and python-kasa version, 2026-10-11, all
+  passed, through python-kasa's Device API unless said:
+  - Kasa plug (HS110): energy readings, daily and monthly energy
+    statistics, daily runtime, schedule and away-mode rule lists, a rule
+    deleted by python-kasa, LED, rename, erasing statistics, Wi-Fi scan
+    and join, reboot;
+  - Kasa dimmer (HS220): python-kasa's dimmer transition and fade time;
+  - Kasa bulb (KL130) and light strip (KL430): colour with a transition,
+    and one of python-kasa's built-in light strip effects set and read
+    back;
+  - Tapo plug (P110, energy component version 2, firmware, auto-off,
+    LED, cloud connection): energy readings, python-kasa's firmware check
+    and update run to its end (download, flash, the new version
+    reported), auto-off delay and switch, LED, Wi-Fi scan, reboot;
+  - Tapo bulb (L530, transitions version 3, light effects, presets):
+    colour, the turn-on transition, a light effect (python-kasa first
+    writes the bulb's brightness into it), the preset list;
+  - Tapo hub (H100) with a T315 sensor, an S200B button and a T110
+    contact sensor: temperature, humidity, the button's log, the contact
+    state;
+  - the 20002 answer's encrypted part, decrypted by python-kasa's
+    discovery;
+  - KLAP over HTTPS (P110M): protocol queries, connect and switch;
+  - camera transport: a C210 camera (connect with the nonce login,
+    every request's tag and sequence accepted, rename) and an H200 hub
+    with a T315 child read through controlChild;
+  - Kasa camera transport (protocol class; the simulator takes any login,
+    as python-kasa sends its built-in default) and the plain HTTPS
+    transport of robot vacuums (protocol class, a single request and a
+    batch).
+  These runs found two things the simulator lacked, added before the
+  release: get_emeter_vgain_igain and edit_dynamic_light_effect_rule
+  (with current_rule_id), and the camera clock section.
 - Not yet: compared with a real Kasa or Tapo device. The simulators and
   the tplink clients are written by the same author, so their agreement
   is not independent; the python-kasa runs are.
+
+## Not yet
+
+| Item | Why |
+|---|---|
+| Camera video, pan and tilt, detection and alarm behaviour; robot vacuum cleaning | the transports and generic camera requests are simulated (`CamSections` answers any section); device behaviour for these families is beyond this release |
+| Writing Tapo schedules and countdowns | the client does not offer it yet (no open-source client to check the requests against) |
+| The TPAP login of the newest firmware | not implemented in the client; no open description to build from |
+| The TP-Link cloud | not a LAN protocol; needs an account |
 
 ## Demo values
 
@@ -125,7 +182,7 @@ made-up demo value. Do not use them for real devices.
 ## Related repositories
 
 - [tplink](https://github.com/cB-Sigma/tplink): the Kasa and Tapo
-  clients this module is built on.
+  clients and helpers this module is built on.
 
 ## Status
 

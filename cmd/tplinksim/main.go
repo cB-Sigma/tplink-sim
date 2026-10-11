@@ -9,6 +9,10 @@
 //	Kasa KL130 colour bulb                 legacy protocol
 //	Tapo P110 plug with energy use         KLAP v2
 //	Tapo L530 colour bulb                  KLAP v2
+//	Kasa HS220 dimmer                      legacy protocol
+//	Kasa KL430 light strip                 legacy protocol
+//	Tapo H100 hub with three sensors       KLAP v2
+//	Tapo C210 camera                       HTTPS (camera transport)
 //	Tapo P100 plug on older firmware       securePassthrough (with -aes)
 //
 // and a responder to the UDP 20002 discovery probe for the Tapo devices.
@@ -69,7 +73,7 @@ func run(ctx context.Context, args []string, out io.Writer, ready func(running))
 	}
 	defer d.Close()
 	r := running{demo: d}
-	tapo := []*sim.Tapo{d.TapoPlug, d.TapoBulb}
+	tapo := []*sim.Tapo{d.TapoPlug, d.TapoBulb, d.TapoHub, d.Camera}
 	if *withAES {
 		r.aes = sim.StartTapoAES(sim.DemoUser, sim.DemoPassword, 2, map[string]any{"device_id": "80223H", "model": "P100", "type": "SMART.TAPOPLUG",
 			"fw_ver": "1.1.3 Build 210521", "mac": "3C-52-A1-00-00-06", "nickname": "UGx1Zw==", "device_on": false}, nil)
@@ -81,9 +85,12 @@ func run(ctx context.Context, args []string, out io.Writer, ready func(running))
 	}
 	defer r.responder.Close()
 	fmt.Fprintf(out, "tplinksim: Tapo account %s / %s\n", sim.DemoUser, sim.DemoPassword)
+	fmt.Fprintf(out, "tplinksim: camera user %s / %s\n", sim.DemoCameraUser, sim.DemoCameraPassword)
 	for _, x := range []struct{ name, addr string }{
 		{"Kasa HS110 plug (legacy)", d.Plug.Addr()}, {"Kasa HS300 strip (legacy)", d.Strip.Addr()}, {"Kasa KL130 bulb (legacy)", d.Bulb.Addr()},
-		{"Tapo P110 plug (KLAP)", d.TapoPlug.Addr()}, {"Tapo L530 bulb (KLAP)", d.TapoBulb.Addr()},
+		{"Kasa HS220 dimmer (legacy)", d.Dimmer.Addr()}, {"Kasa KL430 strip (legacy)", d.LightStrip.Addr()},
+		{"Tapo P110 plug (KLAP)", d.TapoPlug.Addr()}, {"Tapo L530 bulb (KLAP)", d.TapoBulb.Addr()}, {"Tapo H100 hub (KLAP)", d.TapoHub.Addr()},
+		{"Tapo C210 camera (HTTPS)", d.Camera.Addr()},
 	} {
 		fmt.Fprintf(out, "tplinksim: %-26s %s\n", x.name, x.addr)
 	}

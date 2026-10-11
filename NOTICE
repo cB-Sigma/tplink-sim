@@ -24,7 +24,11 @@ Facts from other projects
 
 The protocol facts come from public descriptions, chiefly python-kasa
 (github.com/python-kasa/python-kasa, GPL-3.0), through the tplink module.
-No code was taken.
+Since v0.2.0 the Tapo energy history fields also come from
+fabiankachlock/tapo-api (MIT) and mihai-dinculescu/tapo (MIT). No code,
+effect table or default credential was taken from any of them. The Kasa
+camera simulator can take any login (AnyLogin) so that clients with a
+built-in default can be tested; it holds no such default itself.
 
 Interop tests (interop/, a separate test-only module)
 -----------------------------------------------------

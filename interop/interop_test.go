@@ -4,8 +4,12 @@
 // Package interop runs python-kasa's client (peer/client.py, in a
 // container) against the simulated devices: the legacy protocol and its
 // UDP discovery, KLAP v1 with the Kasa JSON, KLAP v2 with Tapo requests,
-// securePassthrough with both login versions, and the 20002 discovery,
-// through python-kasa's protocol classes and through its Device API. The
+// securePassthrough with both login versions, KLAP over HTTPS, the camera,
+// Kasa camera and plain HTTPS transports, and the 20002 discovery with its
+// encrypted part, through python-kasa's protocol classes and through its
+// Device API, including the modules beyond switching (energy statistics,
+// rules, dimmer, light effects, firmware update, auto-off, LED, Wi-Fi,
+// hub sensors). The
 // tests need Docker and are skipped unless SIGMA_TPLINK_INTEROP=1.
 package interop
 
