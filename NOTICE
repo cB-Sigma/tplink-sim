@@ -1,0 +1,52 @@
+tplink-sim (simulated TP-Link Kasa and Tapo devices, in Go)
+Copyright 2026 Abhinav Gautam
+
+This module is licensed under the Apache License, Version 2.0 (LICENSE).
+
+The code was written for SigmaM2M, a oneM2M platform, from public
+descriptions of the protocols (PROVENANCE.md). It contains no code from
+other projects. sim/sim.go and sim/smart.go come from SigmaM2M and carry
+no per-file copyright header, the convention of the code they come from;
+the copyright line above covers them. Files added for this module carry
+"Copyright 2026 Abhinav Gautam" and "SPDX-License-Identifier:
+Apache-2.0".
+
+Trademarks
+----------
+
+TP-Link, Kasa and Tapo are trademarks of their owner. This module is not
+made, endorsed or supported by TP-Link, and is not affiliated with it;
+the names, and the real model names the demo devices use, only say which
+devices it simulates.
+
+Facts from other projects
+-------------------------
+
+The protocol facts come from public descriptions, chiefly python-kasa
+(github.com/python-kasa/python-kasa, GPL-3.0), through the tplink module.
+No code was taken.
+
+Interop tests (interop/, a separate test-only module)
+-----------------------------------------------------
+
+interop/peer/Dockerfile installs python-kasa 0.11.0.1 (GPL-3.0) from
+PyPI into a python:3.12.10-slim image at test time; nothing of
+python-kasa is copied into this repository, and it is not linked with
+this module. interop/peer/client.py is our own script that calls
+python-kasa.
+
+Dependencies
+------------
+
+- github.com/cB-Sigma/tplink (Copyright 2026 Abhinav Gautam,
+  Apache-2.0).
+- github.com/cB-Sigma/lanbcast (indirect, through tplink; Copyright 2026
+  Abhinav Gautam, Apache-2.0, standard library only).
+- The Go standard library (BSD-3-Clause, Copyright The Go Authors).
+
+Test data
+---------
+
+Every account, MAC address, device ID and address in this module is a
+made-up demo value (the demo account is demo@example.invalid). There are
+no keys or real credentials.
