@@ -6,7 +6,8 @@ Simulated TP-Link Kasa and Tapo devices on their local protocols, for testing Ka
 
 Kasa devices on the legacy protocol (TCP and UDP on one port), Kasa and
 Tapo devices on KLAP v1 and v2 over HTTP and HTTPS, Tapo devices on
-securePassthrough with either login version, Tapo cameras and the H200
+securePassthrough with either login version, Tapo devices and cameras on
+the TPAP login of newer firmware, Tapo cameras and the H200
 hub on their HTTPS transport, Kasa cameras, robot vacuums on the plain
 HTTPS transport, hubs and power strips with children, sensors and button
 logs, and a responder to the UDP 20002 discovery probe. Beyond switching,
@@ -36,7 +37,8 @@ oneM2M platform; it has no dependency on it.
 | Tapo schedule and countdown writes (add, edit, remove; refusals for a full schedule, a rule at the same time, an unknown id, a second countdown) | yes, since v0.3.0 |
 | Camera behaviour (`CamState`): pan and tilt (`CamPosition`), saved positions, the siren, the manual alarm (`CamAlarm`), recordings (`Recordings`), reboot and SD card format (`CamCounts`), Wi-Fi scan, the time zone; detection and other settings through `CamSections` | yes, since v0.3.0 |
 | Robot vacuums (`StartVacuum`, `VacuumState`): status, cleaning by home or rooms, pause, return to dock (`Advance` moves time on), suction, water, passes, consumables, records, maps and rooms, mop, dock emptying, volume, carpet | yes, since v0.3.0 |
-| Camera video, the TPAP login, the cloud | no; see "Not yet" |
+| The TPAP login of newer firmware: Tapo devices in TPAP mode (`StartTapoTPAP`: discover with the tpap object, SPAKE2+ with the account password, AES-128-CCM requests, KLAP refused with 403, the 20002 answer naming TPAP) and cameras that take TPAP next to their HTTPS login (`StartCameraTPAP`); wrong passwords (-2203, cameras -40401), the lock after failed logins (`TPAP.LockAfter`, `UnlockTPAP`), sessions that end (`ForgetTPAPSessions`), stale sequence numbers refused, `TPAPLogins` | yes, since v0.4.0 |
+| Camera video, the cloud | no; see "Not yet" |
 
 ## Install
 
@@ -53,12 +55,13 @@ go install github.com/cB-Sigma/tplink-sim/cmd/tplinksim@latest
 ## Command line
 
 ```
-tplinksim -aes
+tplinksim -aes -tpap
 ```
 
 | Flag | Default | Meaning |
 |---|---|---|
 | `-aes` | off | also serve a Tapo P100 plug on securePassthrough (older firmware) |
+| `-tpap` | off | also serve a Tapo P110M plug on TPAP (newer firmware, third-party compatibility off); since v0.4.0 |
 
 It serves a Kasa HS110 plug with an energy meter, an HS300 strip with
 three outlets, a KL130 colour bulb, an HS220 dimmer and a KL430 light
@@ -92,7 +95,7 @@ Reference: https://pkg.go.dev/github.com/cB-Sigma/tplink-sim
 
 | Package | What it does |
 |---|---|
-| `sim` | `StartKasa`, `StartKasaKLAP`, `StartKasaCamera` (`Kasa`: `KasaState`, `Do`, `Rules`, `Joined`, `Reboots`, `DimmerSetting`), `StartTapo`, `StartTapoAES`, `StartTapoHTTPS`, `StartTapoSSL`, `StartCamera` (`Tapo`: `TapoState`, `Do`, `Children`, `PageSize`, `Press`, `Child`, `SetChild`, `Methods`, `Setting`, `QuickSetup`, `TapoReboots`, `TagFailures`, `ForgetCameraSessions`, `CamPosition`, `CamAlarm`, `CamCounts`), `CamState`, `CamClip`, `StartVacuum`, `NewVacuumState`, `VacuumState`, `VacuumMap`, `VacuumRoom`, `VacuumComponents`, `StartResponder`, `NewDemo`, `DemoUser`, `DemoPassword`, `DemoCameraUser`, `DemoCameraPassword`, `DemoDayWh`, `DemoDayMinutes`, `DemoHourWh` |
+| `sim` | `StartKasa`, `StartKasaKLAP`, `StartKasaCamera` (`Kasa`: `KasaState`, `Do`, `Rules`, `Joined`, `Reboots`, `DimmerSetting`), `StartTapo`, `StartTapoAES`, `StartTapoHTTPS`, `StartTapoSSL`, `StartCamera`, `StartTapoTPAP`, `StartCameraTPAP` (`Tapo`: `TapoState`, `Do`, `Children`, `PageSize`, `Press`, `Child`, `SetChild`, `Methods`, `Setting`, `QuickSetup`, `TapoReboots`, `TagFailures`, `ForgetCameraSessions`, `CamPosition`, `CamAlarm`, `CamCounts`, `TPAP`, `TPAPLogins`, `ForgetTPAPSessions`, `UnlockTPAP`), `TPAPSettings`, `CamState`, `CamClip`, `StartVacuum`, `NewVacuumState`, `VacuumState`, `VacuumMap`, `VacuumRoom`, `VacuumComponents`, `StartResponder`, `NewDemo`, `DemoUser`, `DemoPassword`, `DemoCameraUser`, `DemoCameraPassword`, `DemoDayWh`, `DemoDayMinutes`, `DemoHourWh` |
 | `cmd/tplinksim` | Serves the demo devices and the responder |
 | `interop` (nested module, tests only) | python-kasa's client, and the tapo crate's Python bindings, against the simulators, in containers |
 
@@ -108,8 +111,8 @@ cd interop && SIGMA_TPLINK_INTEROP=1 go test -v ./...   # needs Docker
 The tests at the module root drive the tplink clients against the
 simulators: the legacy protocol, KLAP v1 and v2 with every credential
 kind, KLAP over HTTPS, securePassthrough, the camera, Kasa camera and
-plain HTTPS transports, children and discovery, and every typed helper
-(devices_test.go, https_test.go). Tests carry `// Covers:
+plain HTTPS transports, TPAP (tpap_test.go), children and discovery, and
+every typed helper (devices_test.go, https_test.go). Tests carry `// Covers:
 SIG-...` comments: requirement IDs of the SigmaM2M project's compliance
 report, with no meaning outside it.
 
@@ -186,6 +189,26 @@ report, with no meaning outside it.
     timer armed, read and cleared, one rule and then all removed; the
     tplink client read the rule tapo left exactly as tapo describes it,
     and tapo read a weekend sunrise rule the tplink client added.
+- Added in v0.4.0, 2026-10-12, Docker Desktop on arm64, all passed:
+  - the tapo crate's Python bindings 0.11.1 (image
+    `sigma-tplink-sim-tapo-interop:tapo-0.11.1-r2`, with tpap.py) against
+    a simulated P110 in TPAP mode, given only its address: tapo asked
+    discover, chose TPAP, logged in (SPAKE2+ with the SHA-1 passcode,
+    3000 PBKDF2 iterations, its check of the device's confirmation
+    passed), read the device information, switched the plug on and off
+    and read its energy use over AES-128-CCM; one login for the run. A
+    wrong password was reported by tapo as TPAP_CREDENTIALS.
+  - the same client against a simulated C220 camera that takes TPAP next
+    to its HTTPS login: tapo's TPAP login (MD5 passcode, over HTTPS)
+    succeeded without falling back, and it read the device information.
+  - The first run found that the simulator answered set_device_info with
+    an empty result, which tapo reads as a result that must carry
+    "response"; the simulator now answers without a result. The
+    python-kasa runs above were repeated with that change and passed.
+  - python-kasa has no TPAP: neither its 0.11.0.1 release nor its master
+    (38a3184, 2026-10-09); its TPAP pull request (#1592) is not merged and
+    was not run. So the TPAP device side is checked against one
+    independent client, the tapo crate.
 - Not yet: compared with a real Kasa or Tapo device. The simulators and
   the tplink clients are written by the same author, so their agreement
   is not independent; the python-kasa runs are.
@@ -197,7 +220,8 @@ report, with no meaning outside it.
 | Camera video and snapshots | streams belong outside these modules |
 | Detections firing (motion events, alarms raised by detection) | detection settings are kept; nothing triggers them yet |
 | Writing away (antitheft) rules | the client does not offer it (no open client sends the requests) |
-| The TPAP login of the newest firmware | public descriptions now exist; the client does not have it yet (planned for the next release), so neither does the simulator |
+| TPAP variants beyond the account password: the default passcode, cipher suites other than 1, session ciphers other than AES-128-CCM, the device certificate proof (dac) | the client does not offer them (see tplink's "Not yet"); the simulator answers suite 1, aes_128_ccm and userpw only |
+| TPAP mode switched at run time (the app's third-party compatibility option turned on) | how a device answers TPAP messages in KLAP mode is not described publicly; start a KLAP device (`StartTapo`) instead |
 | The TP-Link cloud | not a LAN protocol; needs an account |
 
 ## Demo values

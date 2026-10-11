@@ -47,6 +47,15 @@ writes. The camera run found that the simulator answered the siren with
 the module level, where recorded devices answer without it; fixed the
 same day.
 
+v0.4.0 (2026-10-12): sim/tpap.go (the TPAP device side) was written for
+this module from the same facts as tplink v0.4.0 (the tapo crate 0.11.1,
+MIT, and RFC 9383; facts only). It is built on tplink's exported
+`TPAPVerifier` and `TPAPCipher`. What the device does around the facts
+(where a session's sequence check starts, the lock counter, which error
+codes the simulator gives for a malformed message) is our own. The tapo
+crate's client was run against it; that run found the simulator's empty
+result to set_device_info, changed the same day.
+
 ## Sources
 
 | Area (files) | Followed |
@@ -56,7 +65,8 @@ same day.
 | Command (cmd/tplinksim) | none (flags are our own) |
 | Rules, cameras, vacuums (sim/rules.go, sim/camera_more.go, sim/vacuum.go) | the tplink module's v0.3.0 facts (tapo crate, plugp100, python-kasa, pytapo); behaviour our own |
 | Interop peer (interop/peer/client.py) | our own script calling python-kasa 0.11.0.1, installed at test time |
-| Second interop peer (interop/tapopeer/schedule.py) | our own script calling the tapo package 0.11.1 (MIT), installed at test time |
+| Second interop peer (interop/tapopeer/schedule.py, tpap.py) | our own scripts calling the tapo package 0.11.1 (MIT), installed at test time |
+| TPAP device (sim/tpap.go) | tplink v0.4.0's TPAP (tapo crate 0.11.1 and RFC 9383, facts only); error codes -2101, -2201, -2202, -2203, -2402 and cameras' -40401 from the tapo crate's error table; behaviour our own |
 
 No specification or vendor text is reproduced.
 
@@ -65,7 +75,7 @@ No specification or vendor text is reproduced.
 | Test | Source |
 |---|---|
 | client_test.go, example_test.go, sim/, cmd/tplinksim | the tplink clients against these simulators, written from the same descriptions; not a real device |
-| interop/ | python-kasa 0.11.0.1's client, and the tapo package 0.11.1's client, against these simulators |
+| interop/ | python-kasa 0.11.0.1's client, and the tapo package 0.11.1's client (also over TPAP), against these simulators |
 
 All accounts, MAC addresses, device IDs and addresses are made-up demo
 values.

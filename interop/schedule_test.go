@@ -16,8 +16,8 @@ import (
 )
 
 // tapoImage is the second peer: the tapo crate's Python bindings, built
-// from ./tapopeer.
-const tapoImage = "sigma-tplink-sim-tapo-interop:tapo-0.11.1"
+// from ./tapopeer (r2: with tpap.py).
+const tapoImage = "sigma-tplink-sim-tapo-interop:tapo-0.11.1-r2"
 
 func needTapoImage(t *testing.T) {
 	t.Helper()
@@ -35,7 +35,13 @@ func needTapoImage(t *testing.T) {
 // runs between and then lets the script go on.
 func runTapo(t *testing.T, between func(), args ...string) map[string]any {
 	t.Helper()
-	p := startPeer(t, append([]string{"--add-host=host.docker.internal:host-gateway", tapoImage, "python", "-u", "schedule.py"}, args...)...)
+	return runTapoScript(t, "schedule.py", between, args...)
+}
+
+// runTapoScript runs one of tapopeer's scripts the same way.
+func runTapoScript(t *testing.T, script string, between func(), args ...string) map[string]any {
+	t.Helper()
+	p := startPeer(t, append([]string{"--add-host=host.docker.internal:host-gateway", tapoImage, "python", "-u", script}, args...)...)
 	steps := map[string]any{}
 	deadline := time.After(120 * time.Second)
 	for {

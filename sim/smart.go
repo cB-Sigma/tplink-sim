@@ -77,7 +77,8 @@ func (t *Tapo) smart(method string, params map[string]any) map[string]any {
 		for k, v := range params {
 			t.Info[k] = v
 		}
-		out["result"] = map[string]any{}
+		// No result: the tapo crate reads a result here as {"response"},
+		// and an empty one fails it (found by the TPAP interop test).
 	case "get_energy_usage":
 		if t.Usage == nil {
 			return map[string]any{"error_code": -1002}
@@ -449,6 +450,13 @@ func (t *Tapo) discoveryAnswer(probeKey []byte) []byte {
 	if camera {
 		enc = "AES"
 	}
+	var tpap map[string]any
+	if t.tpap != nil {
+		tpap = t.tpapObject()
+		if !camera {
+			enc = "TPAP"
+		}
+	}
 	t.mu.Unlock()
 	_, port, _ := net.SplitHostPort(t.Addr())
 	var p int
@@ -476,6 +484,9 @@ func (t *Tapo) discoveryAnswer(probeKey []byte) []byte {
 	if camera {
 		res["encrypt_type"] = []any{"3"}
 		res["mgt_encrypt_schm"] = map[string]any{"is_support_https": true, "encrypt_type": enc, "http_port": p}
+	}
+	if tpap != nil {
+		res["tpap"] = tpap
 	}
 	if secret != nil {
 		if ei, err := tplink.SealTapoDiscovery(probeKey, secret); err == nil {

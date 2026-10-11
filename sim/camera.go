@@ -87,6 +87,9 @@ func (t *Tapo) serveCam(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.tpap != nil && t.serveTPAP(w, r, body) {
+		return
+	}
 	writeJSON := func(v any) { w.Header().Set("Content-Type", "application/json"); _ = json.NewEncoder(w).Encode(v) }
 	var req struct {
 		Method string         `json:"method"`

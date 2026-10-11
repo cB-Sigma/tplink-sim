@@ -6,6 +6,8 @@
 // light strip effects, LED, name, reboot, cloud and Wi-Fi), Kasa and Tapo
 // devices on KLAP v1 and v2 over HTTP or HTTPS (the two-step handshake,
 // signed AES-128-CBC requests), Tapo devices on securePassthrough, Tapo
+// devices and cameras on the TPAP login (StartTapoTPAP, StartCameraTPAP),
+// Tapo
 // hubs and strips with children, Tapo settings, rules, light effects,
 // energy history, firmware update and set-up (TapoState), Tapo cameras and
 // the H200 hub on their HTTPS transport (StartCamera), Kasa cameras
@@ -27,6 +29,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -300,7 +303,10 @@ type Tapo struct {
 	camNonces   map[string]string // first login step's nonces by cnonce
 	tagFailures int
 
-	tpap *tpapState // the TPAP login and its sessions (StartTPAP, tpap.go)
+	tpap *tpapState // the TPAP login and its sessions (StartTapoTPAP, StartCameraTPAP; tpap.go)
+	// TPAP are the settings of a device started with StartTapoTPAP or
+	// StartCameraTPAP (since v0.4.0).
+	TPAP TPAPSettings
 }
 
 type session struct {
@@ -382,6 +388,15 @@ func (t *Tapo) serve(w http.ResponseWriter, r *http.Request) {
 	body = buf.Bytes()
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.tpap != nil {
+		if t.serveTPAP(w, r, body) {
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/app") {
+			w.WriteHeader(http.StatusForbidden) // KLAP is off in TPAP mode
+			return
+		}
+	}
 	cookie, _ := r.Cookie("TP_SESSIONID")
 	switch r.URL.Path {
 	case "/app/handshake1":

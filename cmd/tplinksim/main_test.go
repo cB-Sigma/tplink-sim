@@ -21,7 +21,7 @@ func TestRunner(t *testing.T) {
 	got := make(chan running, 1)
 	var out bytes.Buffer
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, []string{"-aes"}, &out, func(r running) { got <- r }) }()
+	go func() { done <- run(ctx, []string{"-aes", "-tpap"}, &out, func(r running) { got <- r }) }()
 	var r running
 	select {
 	case r = <-got:
@@ -31,18 +31,22 @@ func TestRunner(t *testing.T) {
 		t.Fatal("not ready")
 	}
 	found, err := tplink.TapoDiscover(ctx, r.responder.Addr(), 600*time.Millisecond)
-	if err != nil || len(found) != 5 {
+	if err != nil || len(found) != 6 {
 		t.Fatalf("discovery %+v %v", found, err)
 	}
 	a := &tplink.AESClient{Base: "http://" + r.aes.Addr(), Logins: tplink.AESLogins(sim.DemoUser, sim.DemoPassword, 2), HTTP: &http.Client{Timeout: 5 * time.Second}}
 	if info, err := a.Call(ctx, "get_device_info", nil); err != nil || info["model"] != "P100" {
 		t.Errorf("AES plug %v %v", info, err)
 	}
+	tp := &tplink.TPAPClient{Base: "http://" + r.tpap.Addr(), Password: sim.DemoPassword, HTTP: &http.Client{Timeout: 5 * time.Second}}
+	if info, err := tp.Call(ctx, "get_device_info", nil); err != nil || info["model"] != "P110M" {
+		t.Errorf("TPAP plug %v %v", info, err)
+	}
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "Tapo P100 plug (AES)") || !strings.Contains(out.String(), sim.DemoUser) {
+	if !strings.Contains(out.String(), "Tapo P100 plug (AES)") || !strings.Contains(out.String(), "Tapo P110M plug (TPAP)") || !strings.Contains(out.String(), sim.DemoUser) {
 		t.Errorf("output %s", out.String())
 	}
 }

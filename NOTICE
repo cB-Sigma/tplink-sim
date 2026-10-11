@@ -46,6 +46,13 @@ Nothing of it is copied into this repository. The camera and robot
 vacuum requests the simulators answer follow the same facts as the tplink
 module (python-kasa, pytapo (MIT) and the tapo crate; facts only).
 
+Since v0.4.0, interop/tapopeer/tpap.py, also our own, has the same tapo
+package log in over TPAP. The device side of TPAP (sim/tpap.go) follows
+the tplink module's TPAP facts, which come from the tapo crate 0.11.1
+(MIT) and RFC 9383; facts only, no code taken. It uses tplink's own
+SPAKE2+ verifier and session cipher; it holds no vendor key or default
+passcode.
+
 Dependencies
 ------------
 

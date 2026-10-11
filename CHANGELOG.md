@@ -3,6 +3,27 @@
 All notable changes to this module. Versions follow semantic versioning;
 before v1 the API may change in minor versions.
 
+## v0.4.0 (2026-10-12)
+
+Additions only; the v0.3.0 API is unchanged. Requires tplink v0.4.0.
+
+- TPAP, the login of newer firmware: `StartTapoTPAP` (a Tapo device in
+  TPAP mode: discover with the tpap object, pake_register with
+  password_shadow 2, pake_share, AES-128-CCM requests to /stok=.../ds,
+  KLAP refused with 403, the 20002 answer naming TPAP with the tpap
+  object) and `StartCameraTPAP` (a camera taking TPAP over HTTPS with the
+  MD5 passcode next to its HTTPS login). `Tapo.TPAP` (`TPAPSettings`:
+  iterations, lock after failed logins, first sequence number, announced
+  port), `TPAPLogins`, `ForgetTPAPSessions`, `UnlockTPAP`. Wrong passwords
+  answer -2203 (cameras -40401), a locked device -2101, a request under a
+  stale sequence number or of an unknown session -2402 in clear.
+- `tplinksim -tpap` also serves a P110M plug on TPAP.
+- set_device_info is answered without a result (an empty one failed the
+  tapo crate's client).
+- Interop: the tapo crate's Python bindings 0.11.1 log in over TPAP to the
+  simulated plug and camera (image tag now
+  `sigma-tplink-sim-tapo-interop:tapo-0.11.1-r2`).
+
 ## v0.3.0 (2026-10-11)
 
 Additions only; the v0.2.0 API is unchanged. Requires tplink v0.3.0.
