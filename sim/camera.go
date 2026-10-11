@@ -212,6 +212,11 @@ func (t *Tapo) camRequest(inner map[string]any) map[string]any {
 				continue
 			}
 			vm, _ := v.(map[string]any)
+			if method == "do" {
+				if r, ok := t.camDo(k, vm); ok {
+					return r
+				}
+			}
 			sec := t.camSection(k)
 			if method == "set" {
 				mergeInto(sec, vm)
@@ -302,15 +307,24 @@ func (t *Tapo) camOne(method string, p map[string]any) (map[string]any, int) {
 		}
 		return nil, -40209
 	}
+	if res, code, ok := t.camMore(method, p); ok {
+		return res, code
+	}
 	if strings.HasPrefix(method, "get") {
 		out := map[string]any{}
 		for k := range p {
 			sec, ok := t.CamSections[k]
-			if !ok && k == "system" {
-				// The clock, which clients read on every update.
+			if k == "system" {
+				// The clock, which clients read on every update, and the
+				// time zone, kept once asked so that setTimezone changes it.
+				if !ok {
+					sec, ok = t.camSection("system"), true
+				}
+				if sec["basic"] == nil {
+					sec["basic"] = map[string]any{"timezone": "UTC-00:00", "timing_mode": "ntp", "zone_id": "Europe/London"}
+				}
 				now := time.Now().UTC()
-				sec, ok = map[string]any{"basic": map[string]any{"timezone": "UTC-00:00", "timing_mode": "ntp", "zone_id": "Europe/London"},
-					"clock_status": map[string]any{"local_time": now.Format("2006-01-02 15:04:05"), "seconds_from_1970": now.Unix()}}, true
+				sec["clock_status"] = map[string]any{"local_time": now.Format("2006-01-02 15:04:05"), "seconds_from_1970": now.Unix()}
 			}
 			if !ok {
 				return nil, -40106

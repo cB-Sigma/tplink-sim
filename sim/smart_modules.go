@@ -55,7 +55,12 @@ type TapoState struct {
 	// PlainLogin makes a camera offer only the plain login (firmware
 	// without encrypt_type 3), which then answers in clear.
 	PlainLogin bool
+	// CamState is a camera's motor, alarm and recordings (camera_more.go).
+	CamState
+	// Vacuum is a robot vacuum's state (vacuum.go); nil: not a vacuum.
+	Vacuum *VacuumState
 
+	ruleID    int // the last rule id given
 	fwPolls   int
 	fwRunning bool
 	qs        map[string]any
@@ -190,6 +195,14 @@ func energyData(params map[string]any) map[string]any {
 func (t *Tapo) smartMore(method string, params map[string]any) (map[string]any, bool) {
 	if params == nil {
 		params = map[string]any{}
+	}
+	if t.Vacuum != nil {
+		if r, ok := t.vacuum(method, params); ok {
+			return r, true
+		}
+	}
+	if r, ok := t.ruleWrite(method, params); ok {
+		return r, true
 	}
 	switch method {
 	case "get_energy_data":

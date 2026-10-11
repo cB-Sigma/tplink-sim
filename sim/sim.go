@@ -299,6 +299,8 @@ type Tapo struct {
 	camPassword string
 	camNonces   map[string]string // first login step's nonces by cnonce
 	tagFailures int
+
+	tpap *tpapState // the TPAP login and its sessions (StartTPAP, tpap.go)
 }
 
 type session struct {

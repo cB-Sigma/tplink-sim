@@ -3,6 +3,32 @@
 All notable changes to this module. Versions follow semantic versioning;
 before v1 the API may change in minor versions.
 
+## v0.3.0 (2026-10-11)
+
+Additions only; the v0.2.0 API is unchanged. Requires tplink v0.3.0.
+
+- Tapo schedule and countdown writes: add_schedule_rule (ids S1, S2, ...;
+  full and same-time refusals), edit_schedule_rule, remove_schedule_rules
+  (some or all), add_countdown_rule (one at a time), remove_countdown_rules.
+- Cameras (`CamState`, part of `TapoState`): the motor (motorMove,
+  relativeMove, manualCalibrate, the single "do" form; `CamPosition`),
+  saved positions (addMotorPostion, motorMoveToPreset, deletePreset), the
+  siren answered without the module level as recorded devices do, the
+  manual alarm (`CamAlarm`), recordings (`Recordings`, `CamClip`;
+  searchDateWithVideo, searchVideoWithUTC), rebootDevice, formatSdCard
+  and scanApList (`CamCounts`); the time zone kept once asked, so
+  setTimezone changes it.
+- Robot vacuums (`VacuumState`, `NewVacuumState`, `StartVacuum`,
+  `VacuumMap`, `VacuumRoom`, `VacuumComponents`): status, cleaning by
+  home or rooms, pause, return to dock, settings, consumables, records,
+  maps and rooms, mop, dock emptying, volume, carpet; `Advance` moves a
+  clean on.
+- Interop tests: python-kasa 0.11.0.1's camera modules and vacuum
+  modules against the simulators; the tapo crate's Python bindings 0.11.1
+  writing schedules and a countdown, in a second image
+  (`sigma-tplink-sim-tapo-interop:tapo-0.11.1`); the python-kasa image is
+  now tagged `sigma-tplink-sim-interop:python-kasa-0.11.0.1-r3`.
+
 ## v0.2.0 (2026-10-11)
 
 Additions only; the v0.1.0 API is unchanged. Requires tplink v0.2.0.

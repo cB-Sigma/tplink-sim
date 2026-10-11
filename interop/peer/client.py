@@ -13,6 +13,7 @@
 #   python client.py tapo-plug|tapo-bulb|tapo-hub <host> <port> <user> <pass>
 #   python client.py klap-https|camera|camera-hub|plain-https <host> <port> <user> <pass>
 #   python client.py linkie <host> <port>
+#   python client.py vacuum <host> <port> <user> <pass>
 #
 # Each step prints "PEER <step> <json>" (or "PEER <step>-error <json>");
 # "PEER done" ends the run. The protocol steps use python-kasa's protocol
@@ -323,6 +324,70 @@ async def tdp_secret(host, port, user, pw):
     say("done")
 
 
+async def vacuum(host, port, user, pw):
+    """A robot vacuum on the plain HTTPS transport, through the Device API
+    and its vacuum modules: state, consumables, records, speaker, mop and
+    dustbin read; start, pause, return home and settings sent."""
+    dev = await step("connect", _connect(config(host, port, "SMART.TAPOROBOVAC", "AES", Credentials(user, pw), 2)))
+    if dev is None:
+        say("done")
+        return
+    say("modules", sorted(str(m) for m in dev.modules))
+    clean = dev.modules["Clean"]
+
+    def state():
+        return {"status": clean.status.name, "battery": clean.battery, "fan": clean.fan_speed_preset, "count": clean.clean_count,
+                "carpet": clean.carpet_boost, "area": clean.clean_area, "unit": clean.area_unit.name, "type": str(dev.device_type)}
+    say("vacuum", state())
+    say("consumables", {k: c.used.total_seconds() / 60 for k, c in dev.modules["Consumables"].consumables.items()})
+    rec = dev.modules["CleanRecords"]
+    say("records", {"count": rec.total_clean_count, "area": rec.total_clean_area, "minutes": rec.total_clean_time.total_seconds() / 60,
+                    "last_area": rec.last_clean_area})
+    say("speaker", {"volume": dev.modules["Speaker"].volume})
+    say("mop", {"attached": dev.modules["Mop"].mop_attached, "water": dev.modules["Mop"].waterlevel})
+    say("dustbin", {"auto": dev.modules["Dustbin"].auto_collection, "mode": dev.modules["Dustbin"].mode})
+    for name, fn in (("start", clean.start), ("pause", clean.pause), ("return-home", clean.return_home)):
+        await step(name, fn())
+        await step(name + "-update", dev.update())
+        say(name + "-state", state())
+    await step("fan", clean.set_fan_speed_preset("Max"))
+    await step("volume", dev.modules["Speaker"].set_volume(30))
+    await step("empty", dev.modules["Dustbin"].start_emptying())
+    await step("update", dev.update())
+    say("device2", dict(state(), volume=dev.modules["Speaker"].volume, records=rec.total_clean_count))
+    await dev.disconnect()
+    say("done")
+
+
+async def camera_modules(host, port, user, pw):
+    """A camera's modules through the Device API (v0.3.0): every feature
+    read, settings changed, the motor turned and the siren sounded."""
+    dev = await step("connect", _connect(config(host, port, "SMART.IPCAMERA", "AES", Credentials(user, pw), 2, https=True)))
+    if dev is None:
+        say("done")
+        return
+    say("modules", sorted(str(m) for m in dev.modules))
+    say("features", {k: f.value for k, f in dev.features.items() if f.type != f.Type.Action})
+    for fid, value in (("led", False), ("motion_detection", False), ("person_detection", True), ("baby_cry_detection", True),
+                       ("alarm_volume", 3)):
+        if fid in dev.features:
+            await step("set-" + fid, dev.features[fid].set_value(value))
+    pt = dev.modules.get(Module.PanTilt)
+    if pt is not None:
+        await step("move", pt.move(pan=10, tilt=-5))
+        await step("save-preset", pt.save_preset("Door"))
+    al = dev.modules.get(Module.Alarm)
+    if al is not None:
+        await step("alarm", al.play())
+    lm = dev.modules.get(Module.LensMask)
+    if lm is not None:
+        await step("lens-mask", lm.set_enabled(True))
+    await step("update", dev.update())
+    say("features2", {k: f.value for k, f in dev.features.items() if f.type != f.Type.Action})
+    await dev.disconnect()
+    say("done")
+
+
 async def main():
     try:
         await run_mode()
@@ -367,6 +432,10 @@ async def run_mode():
         await tapo_bulb(*args)
     elif mode == "tapo-hub":
         await tapo_hub(*args)
+    elif mode == "camera-modules":
+        await camera_modules(*args)
+    elif mode == "vacuum":
+        await vacuum(*args)
 
 
 asyncio.run(main())

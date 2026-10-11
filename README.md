@@ -33,7 +33,10 @@ oneM2M platform; it has no dependency on it.
 | Tapo cameras, doorbells and the H200 hub on the HTTPS transport (`StartCamera`): the nonce login with a SHA-256 or MD5 password hash (`PasswordMD5`) or the plain login (`PlainLogin`), request tags and sequence checked (`TagFailures`), sessions that end, camera requests from `CamSections`, renaming, H200 children | yes, since v0.2.0 |
 | Kasa cameras (`StartKasaCamera`) and robot vacuums on the plain HTTPS transport (`StartTapoSSL`) | yes, since v0.2.0 |
 | UDP 20002 responder checking the probe's header, CRC and key; the answer's encrypted part on demand (`DiscoverySecret`); HTTPS and camera answers | yes; one answer per simulated device, from one port |
-| Camera video, pan and tilt and detection behaviour, robot vacuum cleaning, the cloud | no; see "Not yet" |
+| Tapo schedule and countdown writes (add, edit, remove; refusals for a full schedule, a rule at the same time, an unknown id, a second countdown) | yes, since v0.3.0 |
+| Camera behaviour (`CamState`): pan and tilt (`CamPosition`), saved positions, the siren, the manual alarm (`CamAlarm`), recordings (`Recordings`), reboot and SD card format (`CamCounts`), Wi-Fi scan, the time zone; detection and other settings through `CamSections` | yes, since v0.3.0 |
+| Robot vacuums (`StartVacuum`, `VacuumState`): status, cleaning by home or rooms, pause, return to dock (`Advance` moves time on), suction, water, passes, consumables, records, maps and rooms, mop, dock emptying, volume, carpet | yes, since v0.3.0 |
+| Camera video, the TPAP login, the cloud | no; see "Not yet" |
 
 ## Install
 
@@ -89,9 +92,9 @@ Reference: https://pkg.go.dev/github.com/cB-Sigma/tplink-sim
 
 | Package | What it does |
 |---|---|
-| `sim` | `StartKasa`, `StartKasaKLAP`, `StartKasaCamera` (`Kasa`: `KasaState`, `Do`, `Rules`, `Joined`, `Reboots`, `DimmerSetting`), `StartTapo`, `StartTapoAES`, `StartTapoHTTPS`, `StartTapoSSL`, `StartCamera` (`Tapo`: `TapoState`, `Do`, `Children`, `PageSize`, `Press`, `Child`, `SetChild`, `Methods`, `Setting`, `QuickSetup`, `TapoReboots`, `TagFailures`, `ForgetCameraSessions`), `StartResponder`, `NewDemo`, `DemoUser`, `DemoPassword`, `DemoCameraUser`, `DemoCameraPassword`, `DemoDayWh`, `DemoDayMinutes`, `DemoHourWh` |
+| `sim` | `StartKasa`, `StartKasaKLAP`, `StartKasaCamera` (`Kasa`: `KasaState`, `Do`, `Rules`, `Joined`, `Reboots`, `DimmerSetting`), `StartTapo`, `StartTapoAES`, `StartTapoHTTPS`, `StartTapoSSL`, `StartCamera` (`Tapo`: `TapoState`, `Do`, `Children`, `PageSize`, `Press`, `Child`, `SetChild`, `Methods`, `Setting`, `QuickSetup`, `TapoReboots`, `TagFailures`, `ForgetCameraSessions`, `CamPosition`, `CamAlarm`, `CamCounts`), `CamState`, `CamClip`, `StartVacuum`, `NewVacuumState`, `VacuumState`, `VacuumMap`, `VacuumRoom`, `VacuumComponents`, `StartResponder`, `NewDemo`, `DemoUser`, `DemoPassword`, `DemoCameraUser`, `DemoCameraPassword`, `DemoDayWh`, `DemoDayMinutes`, `DemoHourWh` |
 | `cmd/tplinksim` | Serves the demo devices and the responder |
-| `interop` (nested module, tests only) | python-kasa's client against the simulators, in a container |
+| `interop` (nested module, tests only) | python-kasa's client, and the tapo crate's Python bindings, against the simulators, in containers |
 
 Changes per version are in [CHANGELOG.md](CHANGELOG.md).
 
@@ -161,6 +164,28 @@ report, with no meaning outside it.
   These runs found two things the simulator lacked, added before the
   release: get_emeter_vgain_igain and edit_dynamic_light_effect_rule
   (with current_rule_id), and the camera clock section.
+- Added in v0.3.0, 2026-10-12, Docker Desktop on arm64, all passed:
+  - python-kasa 0.11.0.1's camera Device API against a simulated C210
+    (image `sigma-tplink-sim-interop:python-kasa-0.11.0.1-r3`): it loaded
+    the LED, lens mask, pan and tilt, motion, person, baby cry and tamper
+    detection, alarm, last alert and time modules; read every feature;
+    switched the LED and three detections, set the alarm volume, moved
+    the motor (single "do" form), saved a position, sounded the siren and
+    set the lens mask, each checked in the simulator. The first run
+    found the siren answered with the module level, which python-kasa's
+    alarm module cannot read; fixed.
+  - python-kasa 0.11.0.1's vacuum Device API against a simulated vacuum
+    on the plain HTTPS transport: device type and the clean, records,
+    consumables, dustbin, mop and speaker modules; start, pause and
+    return home followed in its status; fan speed, volume and emptying
+    changed.
+  - the tapo crate's Python bindings 0.11.1 (MIT; image
+    `sigma-tplink-sim-tapo-interop:tapo-0.11.1`) against a simulated P110
+    on KLAP v2: two schedules added (weekly clock, sunset), listed,
+    edited (disabled, then a new time and state), the maximum read, the
+    timer armed, read and cleared, one rule and then all removed; the
+    tplink client read the rule tapo left exactly as tapo describes it,
+    and tapo read a weekend sunrise rule the tplink client added.
 - Not yet: compared with a real Kasa or Tapo device. The simulators and
   the tplink clients are written by the same author, so their agreement
   is not independent; the python-kasa runs are.
@@ -169,9 +194,10 @@ report, with no meaning outside it.
 
 | Item | Why |
 |---|---|
-| Camera video, pan and tilt, detection and alarm behaviour; robot vacuum cleaning | the transports and generic camera requests are simulated (`CamSections` answers any section); device behaviour for these families is beyond this release |
-| Writing Tapo schedules and countdowns | the client does not offer it yet (no open-source client to check the requests against) |
-| The TPAP login of the newest firmware | not implemented in the client; no open description to build from |
+| Camera video and snapshots | streams belong outside these modules |
+| Detections firing (motion events, alarms raised by detection) | detection settings are kept; nothing triggers them yet |
+| Writing away (antitheft) rules | the client does not offer it (no open client sends the requests) |
+| The TPAP login of the newest firmware | public descriptions now exist; the client does not have it yet (planned for the next release), so neither does the simulator |
 | The TP-Link cloud | not a LAN protocol; needs an account |
 
 ## Demo values

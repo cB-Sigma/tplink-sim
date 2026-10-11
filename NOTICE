@@ -39,6 +39,13 @@ python-kasa is copied into this repository, and it is not linked with
 this module. interop/peer/client.py is our own script that calls
 python-kasa.
 
+Since v0.3.0, interop/tapopeer/Dockerfile installs the Python bindings of
+mihai-dinculescu/tapo 0.11.1 (MIT) from PyPI into a second image at test
+time; interop/tapopeer/schedule.py is our own script that calls it.
+Nothing of it is copied into this repository. The camera and robot
+vacuum requests the simulators answer follow the same facts as the tplink
+module (python-kasa, pytapo (MIT) and the tapo crate; facts only).
+
 Dependencies
 ------------
 
